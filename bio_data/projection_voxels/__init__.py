@@ -1,3 +1,3 @@
 from .cached_projection import CachedProjections
+from .aibs_mcm_projection import AibsMcmProjections
 from .flattened_projection import FlattenedProjections
-
