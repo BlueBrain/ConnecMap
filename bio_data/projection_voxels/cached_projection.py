@@ -1,4 +1,16 @@
 import numpy
+import voxcell
+
+
+class RegionHierarchyWrapper(object):
+    def __init__(self, hierarchy_fn):
+        self._tree = voxcell.RegionMap.load_json(hierarchy_fn)
+    
+    def region_ids(self, lst_regions):
+        region_id_set = {}
+        for region in lst_regions:
+            region_id_set.update(self._tree.find(region, "acronym", with_descendants=True))
+        return list(region_id_set)
 
 
 class CachedProjections(object):
@@ -16,8 +28,9 @@ class CachedProjections(object):
     2. Data sources such as the AIBS mouse_connectome_models are online. Local caching will make future lookup faster.
     """
 
-    def __init__(self, voxel_array, model_annotations, source_coords_3d, target_coords_3d,
-                 tree, cache_file=None, grow_cache=True):
+    def __init__(self, voxel_array, source_coords_3d, target_coords_3d,
+                 region_annotation_args, hierarchy_args,
+                 cache_file=None, grow_cache=True):
         """
         Args:
             voxel_array: An object that provides access to the voxel-to-voxel connectivity data of the brain that is studied.
@@ -26,10 +39,6 @@ class CachedProjections(object):
                 of a 2d numpy.array. That is, it behaves like a 2d numpy.array itself, although for larger connectomes you might
                 want to implement something cleverer to avoid holding all data in memory at once. The order of the voxel in this
                 structure is given by source_coords_3d and target_coords_3d.
-            
-            model_annotations (numpy.array): A three-dimensional numpy.array that represents the brain volume that is studied in
-                terms of region annotations. That is, each entry represents a brain voxel, and its value is an integer specifying
-                the brain region the voxel belongs to.
 
             source_coords_3d (numpy.array): An N x 3 array specifying the 3d coordinates of source voxels in voxel_array.
                 These coordinates are integers that can be used as indices into model_annotations.
@@ -39,9 +48,15 @@ class CachedProjections(object):
                 Note that voxel_array does _not_ have to cover all brain voxels and the coverage does not have to be the same
                 on the source and target side!
             
-            tree: An object implementing a method "region_ids", that takes a list of strings specifying brain region names as input
-                and returns a list of integers that are used in model_annotations for those regions. That is, finding the integers in
-                the model_annotations array must yield all voxels that are associated with any of the specified regions.
+            region_annotation_args (tuple): A tuple of arguments that will be fed into the ._initialize_annotations function.
+                In this case, a tuple of length 1 containing the path to a .nrrd file that defines the region annotations of
+                the brain that is studied. That is, each entry represents a brain voxel, and its value is an integer specifying
+                the brain region the voxel belongs to.
+            
+            hierarchy_args (tuple): A tuple of arguments that will be fed into the ._initialize_hierarchy function.
+                In this case, a tuple of lenght 1 containing a path to a .json file that specifies the region hierarchy of the brain
+                that is studied. Will be read as a voxcell.RegionMap. Check the voxcell documentation for specifications of the
+                exact format.
             
             cache_file (string): Name / location of the hdf5 file to use as a local cache. If it does not exist and grow_cache is set
                 to True, it will be created.
@@ -53,10 +68,11 @@ class CachedProjections(object):
         self.voxel_array = voxel_array
         self.source_3d = source_coords_3d
         self.target_3d = target_coords_3d
-        self.vol = model_annotations
-        self.tree = tree
 
-        self._shape3d = model_annotations.shape
+        self.vol = self.__class__._initialize_annotations(*region_annotation_args)
+        self.tree = self.__class__._initialize_hierarchy(*hierarchy_args)
+
+        self._shape3d = self.vol.shape
         assert len(self._shape3d) == 3, "Must provide a three-dimensional brain!"
         self._make_indices()
 
@@ -66,6 +82,21 @@ class CachedProjections(object):
         else:
             self._cache_fn = cache_file
         self._grow_cache = grow_cache
+    
+
+    @classmethod
+    def _initialize_hierarchy(cls, *args):
+        assert len(args) == 1
+        fn_hierarchy = args[0]
+        return RegionHierarchyWrapper(fn_hierarchy)
+    
+
+    @classmethod
+    def _initialize_annotations(cls, *args):
+        assert len(args) == 1
+        fn_annotations = args[0]
+        annotations = voxcell.VoxelData.load_nrrd(fn_annotations)
+        return annotations.raw
 
 
     def _make_indices(self):

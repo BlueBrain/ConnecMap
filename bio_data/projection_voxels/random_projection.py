@@ -99,8 +99,21 @@ class RandomProjections(CachedProjections):
         source_coords_3d = voxel_array.source_coords_3d
         target_coords_3d = voxel_array.target_coords_3d
         tree = RandomTree(n_regions)
-        super().__init__(voxel_array, model_annotations, source_coords_3d, target_coords_3d, tree, cache_file, grow_cache)
+        super().__init__(voxel_array, source_coords_3d, target_coords_3d, 
+                         (voxel_array, ), (n_regions, ), cache_file, grow_cache)
         self._voxel_sizes = voxel_sizes
     
     def _three_d_indices_to_output_coords(self, idx, direction):
         return numpy.array(idx) * numpy.array([self._voxel_sizes])
+    
+    @classmethod
+    def _initialize_annotations(cls, *args):
+        assert len(args) == 1
+        vxl_array = args[0]
+        return vxl_array.model_annotations
+    
+    @classmethod
+    def _initialize_hierarchy(cls, *args):
+        assert len(args) == 1
+        n_regions = args[0]
+        return RandomTree(n_regions)

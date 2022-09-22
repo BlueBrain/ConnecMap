@@ -64,11 +64,17 @@ class AibsMcmProjections(CachedProjections):
         voxel_array, source_mask, target_mask = vmc.get_voxel_connectivity_array()
         source_3d = source_mask.coordinates
         target_3d = target_mask.coordinates  # TODO: Option to limit to right hemisphere..?
-        vol, _ = vmc.get_annotation_volume()
-        tree = vmc.get_structure_tree()
-        # return voxel_array, source_3d, target_3d, vol, tree
-        super().__init__(voxel_array, vol, source_3d, target_3d, tree, cache_file, grow_cache)
+        region_annotation_args = (vmc.get_cache_path(None, vmc.ANNOTATION_KEY, vmc.reference_space_key, vmc.resolution),)
+        # vol, _ = vmc.get_annotation_volume()
+        hierarchy_tree_args = (vmc.get_structure_tree(),)
+        super().__init__(voxel_array, source_3d, target_3d, region_annotation_args, hierarchy_tree_args, cache_file, grow_cache)
         self._voxel_sizes = voxel_sizes
     
     def _three_d_indices_to_output_coords(self, idx, direction):
         return numpy.array(idx) * numpy.array([self._voxel_sizes])
+    
+    @classmethod
+    def _initialize_hierarchy(cls, *args):
+        assert len(args) == 1
+        aibs_tree = args[0]
+        return AibsTreeWrapper(aibs_tree)
