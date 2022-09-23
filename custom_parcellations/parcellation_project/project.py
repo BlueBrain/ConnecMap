@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import voxcell
 import json
@@ -24,12 +25,17 @@ class ParcellationProject(object):
 
     def __read_config__(self):
         # Find configuration file at expected location and load it
-        with open(os.path.join(self._root, ParcellationProject._path_config), "r") as fid:
+        fn_cfg = os.path.join(self._root, ParcellationProject._path_config)
+        path_cfg = os.path.split(os.path.abspath(fn_cfg))[0]
+        with open(fn_cfg, "r") as fid:
             self.config = json.load(fid)
         # Hyperparameters, such as initial module parcellation and other
         self.parameters = self.config["parameters"]
         # Configuration of the individual parcellation level
         self.lvl_cfg = self.config["level_configuration"]
+        for k, k_path in self.lvl_cfg["inputs"].items():
+            if not os.path.isabs(k_path):
+                self.lvl_cfg["inputs"][k] = os.path.join(path_cfg, k_path)
 
     def __initialize__(self):  # Use this when starting a new ParcellationProject
         root = os.path.join(self._root, self.lvl_cfg["paths"]["lower_level"])
@@ -59,7 +65,7 @@ class ParcellationProject(object):
         """Write voxel model manifest into current level and copy manifest, annotation file
         and structures file into the allen connectivity model directory.
         """
-        with open(self.lvl_cfg["voxel_model_manifest"], "r") as read_file:
+        with open(self.lvl_cfg["inputs"]["voxel_model_manifest"], "r") as read_file:
             original_manifest = json.load(read_file)
         self.current_level.write_manifest(version=version, model_manifest=original_manifest)
         shutil.copyfile(self.current_level.structures_fn,
@@ -87,36 +93,41 @@ class ParcellationProject(object):
         Like "analyze_current_parcellation, but analyzing the flatmap at the current level instead
         """
         from parcellation_project.analyses import flatmaps  # module for all analyses of flatmaps
+        from .tree_helpers import region_map_at
         for analysis_name in self.lvl_cfg["analyses"]["flatmap"]:
             for region_name in self.current_level.regions:  # Analyze regions separately
-                # The input specifying the region to be analyzed is conveniently a Hierarchy object
-                region_root = self.current_level.hierarchy_root.find("acronym", region_name)
-                assert len(region_root) == 1
+                region_root = region_map_at(self.current_level.hierarchy_root, region_name)
                 function = flatmaps.__dict__[analysis_name]
-                function(self.current_level, region_root[0], output_root=self.current_level.analysis_root)
+                function(self.current_level, region_root, output_root=self.current_level.analysis_root)
 
     def __apply_split__(self, split_solution):
-        from parcellation_project.tree_helpers import deep_copy
+        from .tree_helpers import deep_copy, region_map_to_dict, find_node_in_hierarchy_dict
         curr = self.current_level
-        hc = deep_copy(curr.hierarchy)
+        hc = region_map_to_dict(curr.hierarchy)
+        # hc = deep_copy(curr.hierarchy)
         ann_vol = curr.region_volume.raw.copy()
         structures = curr.structures.copy()
         offset = numpy.max(ann_vol) + 1
 
         for region_name, solution in split_solution.items():
-            r = hc.find("acronym", region_name)[0]
+            # r = hc.find("acronym", region_name)[0]
+            r = find_node_in_hierarchy_dict(hc, "acronym", region_name)
             assert len(r.children) == 0, "Region to be split should be clean"
-            curr_ids = list(r.get("id"))
+            curr_ids = voxcell.RegionMap.from_dict(r).as_dataframe().index.values
             idxx = numpy.in1d(ann_vol.flat, curr_ids).reshape(ann_vol.shape)
             idxx[:,:,:int(idxx.shape[2]/2)] = False
             assert numpy.count_nonzero(idxx) == len(solution), "This should never be triggered!"
             ann_vol[idxx] = solution[:, -1] + offset
             for sub_id in numpy.unique(solution[:, -1]):
-                r.children.append(voxcell.Hierarchy({
-                    "name": r.data["name"] + "_" + str(int(sub_id)),
-                    "acronym": r.data["acronym"] + "_" + str(int(sub_id)),
-                    "id": int(sub_id + offset)
-                }))
+                r.setdefault("children", []).append(
+                    {
+                        "name": r["name"] + "_" + str(int(sub_id)),
+                        "acronym": r.data["acronym"] + "_" + str(int(sub_id)),
+                        "id": int(sub_id + offset),
+                        "children": []
+                    }
+                )
+
                 highest_graph_order = int(numpy.max([struc["graph_order"] for struc in structures]))
                 struc_reg = [x for x in structures if x["acronym"] == region_name][0]
                 structures.append({
@@ -129,7 +140,7 @@ class ParcellationProject(object):
                     "structure_id_path": struc_reg.get('structure_id_path') + [int(sub_id + offset)],
                     "structure_set_ids": struc_reg.get('structure_set_ids').copy()})
             offset += (numpy.max(solution) + 1)
-        return hc, voxcell.VoxelData(ann_vol, curr.region_volume.voxel_dimensions,
+        return voxcell.RegionMap.from_dict(hc), voxcell.VoxelData(ann_vol, curr.region_volume.voxel_dimensions,
                                      offset=curr.region_volume.offset), structures
 
     def split_current_level(self):
@@ -253,7 +264,7 @@ class ParcellationLevel(object):
         return voxcell.VoxelData.load_nrrd(self.region_volume_fn)
 
     def _load_hierarchy(self):
-        return voxcell.Hierarchy.load_json(self.hierarchy_fn)
+        return voxcell.RegionMap.load_json(self.hierarchy_fn)
 
     def _load_structures(self):
         with open(self.structures_fn, "r") as fid:
@@ -305,10 +316,9 @@ class ParcellationLevel(object):
 
     @property
     def hierarchy_root(self):
-        h = self.hierarchy
-        r = h.find("acronym", self._config["root_region"])
-        assert len(r) == 1, "Root region {0} not found!".format(self._config["root_region"])
-        return r[0]
+        from .tree_helpers import region_map_at
+        return region_map_at(self.hierarchy, self._config["root_region"])
+
 
     def find_next_level(self):
         if os.path.isdir(self.next_level_root):
@@ -327,8 +337,8 @@ class ParcellationLevel(object):
         reg_vol.save_nrrd(self.region_volume_fn)
     
     def write_hierarchy(self):
-        from parcellation_project.tree_helpers import hierarchy_to_dict
-        hier = hierarchy_to_dict(self.hierarchy)  # voxcell.Hierarchy
+        from parcellation_project.tree_helpers import region_map_to_dict
+        hier = region_map_to_dict(self.hierarchy)  # voxcell.RegionMap
         if not os.path.isdir(os.path.split(self.hierarchy_fn)[0]):
             os.makedirs(os.path.split(self.hierarchy_fn)[0])
         with open(self.hierarchy_fn, 'w') as fid:
@@ -347,13 +357,18 @@ class ParcellationLevel(object):
         with open(self.manifest_fn, 'w') as fid:
             json.dump(model_manifest, fid, indent=1, sort_keys=False)
 
+    def write_manifest2(self):
+        import os
+        path_in = self._config["inputs"]["voxel_model_manifest"]
+        # TODO: Finish
+
     def write_flattening_config(self, components_to_use, overwrite=False, **kwargs):
         from parcellation_project.tree_helpers import leaves, normalization_spread, normalization_offsets
         if os.path.isfile(self.flattening_fn) and not overwrite:
             return
-        to_flatten = leaves(self.hierarchy_root, property="acronym")
+        to_flatten = leaves(self.hierarchy_root)["acronym"].values
         if kwargs["consider_connectivity"] == 'inter':
-            to_consider = leaves(self.hierarchy_root, property="acronym")
+            to_consider = list(leaves(self.hierarchy_root)["acronym"].values)
         direction = kwargs["connectivity_direction"]
         flat_config = []
         lst_spread = []
@@ -373,26 +388,19 @@ class ParcellationLevel(object):
         
         flat_config = normalization_offsets(lst_spread, flat_config)
         with open(self.flattening_fn, "w") as fid:
-            json.dump(flat_config, fid)
-            
+            json.dump(flat_config, fid, indent=2)
             
     @staticmethod
     def max_depth_region_map(hierarchy, root_region):
-        from parcellation_project.tree_helpers import at_max_depth, leaves
-        r = hierarchy.find("acronym", root_region)
-        assert len(r) == 1, "Root region {0} not found!".format(root_region)
-        r = r[0]
-        # leaves = at_max_depth(r)
-        leaves = leaves(r)
-        ids = [l.data["id"] for l in leaves]
-        regions = [l.data["acronym"] for l in leaves]
-        region_map = dict(zip(regions, ids))
-        return region_map
+        from .tree_helpers import region_map_at, leaves
+
+        r = leaves(region_map_at(hierarchy, root_region))
+        return dict(zip(r["acronym"].values, r.index))
 
     @classmethod
     def from_file_system(cls, root, config):
         fn_h = os.path.join(root, config["paths"]["hierarchy"])
-        h = voxcell.Hierarchy.load_json(fn_h)
+        h = voxcell.RegionMap.load_json(fn_h)
         fn_v = os.path.join(root, config["paths"]["region_volume"])
         v = voxcell.VoxelData.load_nrrd(fn_v)
         fn_s = os.path.join(root, config["paths"]["structures"])
@@ -405,28 +413,19 @@ class ParcellationLevel(object):
 
     @classmethod
     def initial_parcellation(cls, root, config, initial_parcellation):
-        from parcellation_project.tree_helpers import deep_copy
-        annotations = voxcell.VoxelData.load_nrrd(config["anatomical_parcellation"])
-        hierarchy = voxcell.Hierarchy.load_json(config["anatomical_hierarchy"])
-        with open(config["voxel_model_structures"], "r") as fid:
-            structures = json.load(fid)
-        custom_hierarchy = deep_copy(hierarchy)
-        id_offset = int(numpy.max(list(hierarchy.get("id"))) + 1)        
-        r = custom_hierarchy.find("acronym", config["root_region"])
-        assert len(r) == 1, "Root region {0} not found!".format(config["root_region"])
-        r = r[0]
-        ids_to_remove = []
-        for child in r.children:
-            ids_to_remove.extend(list(child.get("id")))
+        # from parcellation_project.tree_helpers import deep_copy
+        from .tree_helpers import region_map_to_dict, truncate_hierarchy_dict_at, region_map_at, find_node_in_hierarchy_dict
 
-        r.children = []  # truncate hierarchy
-        # # Also truncate structures
-        # i = 0
-        # while i < len(structures):
-        #     if structures[i]["id"] in ids_to_remove:
-        #         structures.pop(i)
-        #     else:
-        #         i += 1
+        annotations = voxcell.VoxelData.load_nrrd(config["inputs"]["anatomical_parcellation"])
+        hierarchy = voxcell.RegionMap.load_json(config["inputs"]["anatomical_hierarchy"])
+        with open(config["inputs"]["voxel_model_structures"], "r") as fid:
+            structures = json.load(fid)
+        
+        hierarchy_dict = truncate_hierarchy_dict_at(region_map_to_dict(hierarchy), "acronym", config["root_region"])
+        # Not a copy. Changes to this will be reflected in hierarchy_dict
+        hierarchy_root = find_node_in_hierarchy_dict(hierarchy_dict, "acronym", config["root_region"])
+
+        id_offset = int(hierarchy.as_dataframe().index.values.max() + 1)        
 
         highest_graph_order = numpy.max([struc["graph_order"] for struc in structures])
         struc_root = [x for x in structures if x["acronym"] == config["root_region"]]
@@ -440,11 +439,10 @@ class ParcellationLevel(object):
 
             target_ids = []
             for region in module_regions:
-                reg = hierarchy.find("acronym", region)
+                reg = hierarchy.find(region, "acronym", with_descendants=True)
                 if len(reg) < 1:
                     print("Warning: No region found for {0}".format(region))
-                for _r in reg:
-                    target_ids.extend(_r.get("id"))
+                target_ids.extend(reg)
 
             module_mask = numpy.in1d(annotations.raw.flat, target_ids).reshape(annotations.raw.shape)
             ### Build mask, consider one or both hemispheres and discard non flat voxels
@@ -453,16 +451,21 @@ class ParcellationLevel(object):
             elif config["hemisphere"] == "left":
                 module_mask[:,:,int(module_mask.shape[2]/2):] = False
             # Remove non flat pixels    
-            anat_fm = voxcell.VoxelData.load_nrrd(config["anatomical_flatmap"])
+            anat_fm = voxcell.VoxelData.load_nrrd(config["inputs"]["anatomical_flatmap"])
             mask_fm = anat_fm.raw[:,:,:,0] == -1
             module_mask[mask_fm == True] = False
             ###
             annotations.raw[module_mask] = module_id
-            r.children.append(voxcell.Hierarchy({
-                "name": module_name,
-                "acronym": module_name,
-                "id": int(module_id)
-            }))
+
+            hierarchy_root.setdefault("children", []).append(
+                {
+                    "name": module_name,
+                    "acronym": module_name,
+                    "id": int(module_id),
+                    "children": []
+                }
+            )
+            
             structures.append({
                 "acronym": module_name,
                 "name": module_name,
@@ -474,5 +477,6 @@ class ParcellationLevel(object):
                 "structure_set_ids": root_struc_set_ids.copy()
             })
             highest_graph_order += 1
+        custom_hierarchy = voxcell.RegionMap.from_dict(hierarchy_dict) 
         return cls(root, config, custom_hierarchy, structures, annotations, overwrite=True)
 
