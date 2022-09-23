@@ -208,6 +208,8 @@ class ParcellationLevel(object):
         self._region_volume = region_volume
         if self._region_volume is not None and (not os.path.isfile(self.region_volume_fn) or overwrite):
             self.write_region_volume()
+        if not os.path.isfile(self.manifest_fn) or overwrite:
+            self.write_manifest()
         
 
         self.region_map = self.max_depth_region_map(self._hierarchy, self._config["root_region"])
@@ -351,16 +353,45 @@ class ParcellationLevel(object):
         with open(self.structures_fn, "w") as fid:
             json.dump(struc, fid, indent=2, sort_keys=False)
 
-    def write_manifest(self, version, model_manifest):
-        model_manifest['manifest'][2]['spec'] = f'structures_{version}.json'
-        model_manifest['manifest'][4]['spec'] = f'annotation_%d_{version}.nrrd'
-        with open(self.manifest_fn, 'w') as fid:
-            json.dump(model_manifest, fid, indent=1, sort_keys=False)
-
-    def write_manifest2(self):
+    def write_manifest(self):
+        """
+        Files to override: 
+            structures (custom)
+            annotations (custom)
+        """
+        str_custom_dir = "CUSTOMDIR"
         import os
-        path_in = self._config["inputs"]["voxel_model_manifest"]
-        # TODO: Finish
+
+        path_in = os.path.abspath(self._config["inputs"]["voxel_model_manifest"])
+        path_out = os.path.abspath(self.manifest_fn)
+        root_in = os.path.split(path_in)[0]
+        root_out = os.path.split(path_out)[0]
+
+        with open(path_in, "r") as fid:
+            manifest_in = json.load(fid)
+        manifest_lst = manifest_in["manifest"]
+
+        for entry in manifest_lst:
+            if entry["type"] in ["dir", "file"]:
+                if entry["key"] == "ANNOTATION":
+                    entry["spec"] = os.path.relpath(self.region_volume_fn, root_out)
+                    entry["parent_key"] = str_custom_dir
+                elif entry["key"] == "STRUCTURE_TREE":
+                    entry["spec"] = os.path.relpath(self.hierarchy_fn, root_out)
+                    entry["parent_key"] = str_custom_dir
+                elif "parent_key" not in entry:
+                    entry["spec"] = os.path.relpath(os.path.join(root_in, entry["spec"]), root_out)
+        
+        manifest_lst.append(
+            {
+                "key": str_custom_dir,
+                "typ": "dir",
+                "spec": "."
+            }
+        )
+        
+        with open(self.manifest_fn, 'w') as fid:
+            json.dump(manifest_in, fid, indent=2, sort_keys=False)
 
     def write_flattening_config(self, components_to_use, overwrite=False, **kwargs):
         from parcellation_project.tree_helpers import leaves, normalization_spread, normalization_offsets
