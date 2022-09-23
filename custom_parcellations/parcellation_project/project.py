@@ -58,8 +58,18 @@ class ParcellationProject(object):
     def flatten_current_level(self, components_to_use=[0, 1], overwrite=False):
         connectivity = self.config['parameters']['Diffusion_mapping']
         self.current_level.write_flattening_config(components_to_use, overwrite=overwrite, **connectivity)
-        print("""Flattening configuration has been written to {0}.
-        Execute flattening algorithm using that file!""".format(self.current_level.flattening_fn))
+        self.current_level.write_cache_config(overwrite=overwrite)
+
+        print(
+            """
+            Preparations for running the diffusion embedding process done. Please run:
+
+            make_diffusion_flatmap.py --cache_config {0} --output_path {1} --region_file {2} --characterize {3}
+            """.format(self.current_level.cache_cfg_fn,
+            self.current_level.flatmap_fn,
+            self.current_level.flattening_fn,
+            self.current_level.characterization_fn)
+        )
     
     def allen_model_config(self, version):
         """Write voxel model manifest into current level and copy manifest, annotation file
@@ -206,6 +216,7 @@ class ParcellationLevel(object):
         if self._structures is not None and (not os.path.isfile(self.structures_fn) or overwrite):
             self.write_structures()
         self._region_volume = region_volume
+        self._voxel_resolution = int(region_volume.voxel_dimensions[0])  # TODO: Stop assuming isotropic voxels?
         if self._region_volume is not None and (not os.path.isfile(self.region_volume_fn) or overwrite):
             self.write_region_volume()
         if not os.path.isfile(self.manifest_fn) or overwrite:
@@ -246,6 +257,10 @@ class ParcellationLevel(object):
     @property
     def flattening_fn(self):
         return os.path.join(self._root, self._config["paths"]["flatten_cfg"])
+
+    @property
+    def cache_cfg_fn(self):
+        return os.path.join(self._root, self._config["paths"]["cache_cfg"])
 
     @property
     def flatmap_fn(self):
@@ -362,6 +377,8 @@ class ParcellationLevel(object):
         str_custom_dir = "CUSTOMDIR"
         import os
 
+        region_vol_for_mcm = self.copy_files_for_mcmodels()
+
         path_in = os.path.abspath(self._config["inputs"]["voxel_model_manifest"])
         path_out = os.path.abspath(self.manifest_fn)
         root_in = os.path.split(path_in)[0]
@@ -374,24 +391,37 @@ class ParcellationLevel(object):
         for entry in manifest_lst:
             if entry["type"] in ["dir", "file"]:
                 if entry["key"] == "ANNOTATION":
-                    entry["spec"] = os.path.relpath(self.region_volume_fn, root_out)
+                    entry["spec"] = os.path.relpath(region_vol_for_mcm, root_out)
                     entry["parent_key"] = str_custom_dir
                 elif entry["key"] == "STRUCTURE_TREE":
-                    entry["spec"] = os.path.relpath(self.hierarchy_fn, root_out)
+                    entry["spec"] = os.path.relpath(self.structures_fn, root_out)
                     entry["parent_key"] = str_custom_dir
                 elif "parent_key" not in entry:
                     entry["spec"] = os.path.relpath(os.path.join(root_in, entry["spec"]), root_out)
         
-        manifest_lst.append(
+        manifest_lst.insert(1,
             {
                 "key": str_custom_dir,
-                "typ": "dir",
+                "type": "dir",
                 "spec": "."
             }
         )
         
         with open(self.manifest_fn, 'w') as fid:
             json.dump(manifest_in, fid, indent=2, sort_keys=False)
+    
+    def copy_files_for_mcmodels(self):
+        from allensdk.api.queries.mouse_connectivity_api import MouseConnectivityApi
+        MCM_FRAG = "%s/%d"
+        res_args = (MouseConnectivityApi.CCF_VERSION_DEFAULT, self._voxel_resolution)
+        vol_root, vol_fn = os.path.split(self.region_volume_fn)
+        out_root = os.path.join(vol_root, MCM_FRAG)
+        if not os.path.exists(out_root % res_args):
+            os.makedirs(out_root % res_args)
+        shutil.copy(self.region_volume_fn, out_root % res_args)
+
+        out_fn = os.path.join(out_root, vol_fn)
+        return out_fn
 
     def write_flattening_config(self, components_to_use, overwrite=False, **kwargs):
         from parcellation_project.tree_helpers import leaves, normalization_spread, normalization_offsets
@@ -420,6 +450,23 @@ class ParcellationLevel(object):
         flat_config = normalization_offsets(lst_spread, flat_config)
         with open(self.flattening_fn, "w") as fid:
             json.dump(flat_config, fid, indent=2)
+    
+    def write_cache_config(self, overwrite=False):
+        # TODO: Specify resolution to use (self._voxel_resolution) here as an input to AibsMcmProjections!
+        if os.path.isfile(self.cache_cfg_fn) and not overwrite:
+            return
+        
+        cache_cfg = {
+            "class": "AibsMcmProjections",
+            "args": {
+                "AllenCache": os.path.abspath(self.manifest_fn),
+                "H5Cache": os.path.join(os.path.split(self._config["inputs"]["voxel_model_manifest"])[0],
+                                        "projections_h5_cache.h5")
+            }
+        }
+
+        with open(self.cache_cfg_fn, "w") as fid:
+            json.dump(cache_cfg, fid, indent=2)
             
     @staticmethod
     def max_depth_region_map(hierarchy, root_region):
@@ -508,6 +555,7 @@ class ParcellationLevel(object):
                 "structure_set_ids": root_struc_set_ids.copy()
             })
             highest_graph_order += 1
-        custom_hierarchy = voxcell.RegionMap.from_dict(hierarchy_dict) 
+        custom_hierarchy = voxcell.RegionMap.from_dict(hierarchy_dict)
+
         return cls(root, config, custom_hierarchy, structures, annotations, overwrite=True)
 

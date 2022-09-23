@@ -10,10 +10,10 @@ def projection_from_json(fn):
     cache_args = cfg["args"]
 
     if cache_cls == "CachedProjections":
-        assert "cache_fn" in cache_args, "Must specify h5 Cache to use CachedProjections base class!"
+        assert "H5Cache" in cache_args, "Must specify h5 Cache to use CachedProjections base class!"
         from .cached_projection import CachedProjections
         cache = CachedProjections(None, None, None, (), (),
-        cache_file=cache_args["cache_fn"], grow_cache=False)
+        cache_file=cache_args["h5Cache"], grow_cache=False)
         cache._cache_only = True
         return cache
 
@@ -22,8 +22,8 @@ def projection_from_json(fn):
             import mcmodels
             vmc = mcmodels.core.VoxelModelCache(manifest_file=cache_args.get("AllenCache", None))
             from .aibs_mcm_projection import AibsMcmProjections
-            cache = AibsMcmProjections(vmc, cache_args.get("cache_fn", None),
-                                       grow_cache=(cache_args.get("cache_fn", None) is not None))
+            cache = AibsMcmProjections(vmc, cache_args.get("H5Cache", None),
+                                       grow_cache=(cache_args.get("H5Cache", None) is not None))
         except ImportError:
             raise ImportError("Must install mouse_connectivity_models to use the AibsMcmProjections class!")
 
