@@ -9,6 +9,8 @@ from scipy.spatial.distance import pdist, squareform
 import parcellation_project.analyses.flatmaps as fm_analyses
 from parcellation_project.plotting import connectivity_structure
 
+from ..tree_helpers import region_map_at
+
 def convolve(A, B):
         return signal.convolve2d(A, B, "same") / signal.convolve2d(numpy.ones_like(A), B, "same")
 
@@ -223,7 +225,7 @@ def reversal_detector_tuner(image, pre_filter_sz, post_filter_sz, min_seed_clust
 def reversal_detector(region, fm0, fm1, annotations, hierarchy_root, component="optimized",
                        pre_filter_sz=5, post_filter_sz=1, min_seed_cluster_sz=4, border_thresh=0.05):
     
-    hierarchy_reg = hierarchy_root.find("acronym", region)[0]
+    hierarchy_reg = region_map_at(hierarchy_root, region)
     three_d_coords, two_d_coords = fm_analyses.flatmap_to_coordinates(annotations, fm0, hierarchy_reg)
     two_d_coords = numpy.unique(two_d_coords, axis=0)
     

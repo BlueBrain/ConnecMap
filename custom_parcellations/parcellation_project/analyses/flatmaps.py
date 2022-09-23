@@ -20,7 +20,7 @@ from scipy.spatial.distance import pdist, squareform
 # the root region is used, i.e. most likely Isocortex
 def from_parcellation(base_func):
     def returned_function(parc_level, region_root=None, **kwargs):
-        fm0_fn = parc_level._config["anatomical_flatmap"]
+        fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
         fm0 = voxcell.VoxelData.load_nrrd(fm0_fn)
         annotations = parc_level.region_volume
         fm1 = parc_level.flatmap

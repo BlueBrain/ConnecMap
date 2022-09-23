@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import voxcell
 import json
@@ -71,21 +70,6 @@ class ParcellationProject(object):
             self.current_level.characterization_fn)
         )
     
-    def allen_model_config(self, version):
-        """Write voxel model manifest into current level and copy manifest, annotation file
-        and structures file into the allen connectivity model directory.
-        """
-        with open(self.lvl_cfg["inputs"]["voxel_model_manifest"], "r") as read_file:
-            original_manifest = json.load(read_file)
-        self.current_level.write_manifest(version=version, model_manifest=original_manifest)
-        shutil.copyfile(self.current_level.structures_fn,
-                        f'{self.lvl_cfg["allen_model_path"]}/structures_{version}.json')
-        shutil.copyfile(self.current_level.manifest_fn,
-                        f'{self.lvl_cfg["allen_model_path"]}/voxel_model_manifest_{version}.json')
-        shutil.copyfile(self.current_level.region_volume_fn,
-                        f'{self.lvl_cfg["allen_model_path"]}/annotation/ccf_2017/annotation_100_{version}.nrrd')
-        print(f'Copying allen model configuration files for Trial {version} into {self.lvl_cfg["allen_model_path"]}')
-    
 
     def analyze_current_parcellation(self):
         """Call specified functions that analyze the current parcellation scheme. Function are specified in the configuration
@@ -122,7 +106,7 @@ class ParcellationProject(object):
         for region_name, solution in split_solution.items():
             # r = hc.find("acronym", region_name)[0]
             r = find_node_in_hierarchy_dict(hc, "acronym", region_name)
-            assert len(r.children) == 0, "Region to be split should be clean"
+            assert len(r.get("children", [])) == 0, "Region to be split should be clean"
             curr_ids = voxcell.RegionMap.from_dict(r).as_dataframe().index.values
             idxx = numpy.in1d(ann_vol.flat, curr_ids).reshape(ann_vol.shape)
             idxx[:,:,:int(idxx.shape[2]/2)] = False
@@ -132,7 +116,7 @@ class ParcellationProject(object):
                 r.setdefault("children", []).append(
                     {
                         "name": r["name"] + "_" + str(int(sub_id)),
-                        "acronym": r.data["acronym"] + "_" + str(int(sub_id)),
+                        "acronym": r["acronym"] + "_" + str(int(sub_id)),
                         "id": int(sub_id + offset),
                         "children": []
                     }
@@ -141,8 +125,8 @@ class ParcellationProject(object):
                 highest_graph_order = int(numpy.max([struc["graph_order"] for struc in structures]))
                 struc_reg = [x for x in structures if x["acronym"] == region_name][0]
                 structures.append({
-                    "acronym": r.data["acronym"] + "_" + str(int(sub_id)),
-                    "name": r.data["name"] + "_" + str(int(sub_id)),
+                    "acronym": r["acronym"] + "_" + str(int(sub_id)),
+                    "name": r["name"] + "_" + str(int(sub_id)),
                     "id": int(sub_id + offset),
                     "rgb_triplet": [255, 255, 255],
                     "graph_id": int(1),
