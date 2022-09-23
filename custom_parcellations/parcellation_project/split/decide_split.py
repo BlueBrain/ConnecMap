@@ -1,7 +1,6 @@
 import numpy
 from voxcell import VoxelData
 from parcellation_project.analyses import flatmaps as fm_analyses
-from parcellation_project.project import ParcellationLevel
 from sklearn.cluster import KMeans
 from sklearn import svm
 from scipy.cluster.hierarchy import linkage, fcluster

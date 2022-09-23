@@ -9,7 +9,6 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import pandas as pd
 from parcellation_project.analyses import flatmaps as fm_analyses
-from parcellation_project.project import ParcellationLevel
 from parcellation_project.analyses.parcellation import _mi_implementation
 from parcellation_project.analyses.parcellation import mutual_information_two_parcellations
 from voxel_maps import coordinates_to_image

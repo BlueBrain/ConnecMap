@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='parcellation_project',
-    version='0.1',
+    version='0.2',
     install_requires=['rectangle-packer >= 2.0.0',
                       'numpy >= 1.18.5',
                       'voxcell >= 2.6.3',
