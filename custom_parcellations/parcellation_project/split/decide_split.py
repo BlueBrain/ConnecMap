@@ -6,7 +6,7 @@ from sklearn import svm
 from scipy.cluster.hierarchy import linkage, fcluster
 import scipy
 from scipy.spatial.distance import pdist
-from sklearn.metrics import plot_confusion_matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import itertools
 from scipy.spatial.distance import pdist, cdist, squareform
@@ -206,6 +206,7 @@ def reversal_detector_from_parcellation(parc_level, **kwargs):
             results[region_name] = reversal_detector(region_name,
                                                     fm0, fm1,
                                                     annotations, r,
+                                                    component=kwargs.get("component", "optimized"),
                                                     pre_filter_sz=kwargs["pre_filter_sz"],
                                                     post_filter_sz=kwargs["post_filter_sz"],
                                                     min_seed_cluster_sz=kwargs["min_seed_cluster_sz"],
@@ -251,25 +252,20 @@ def split_with_SVM(gradient_clf, c, gamma, thres_accuracy, show=True):
     # Train SVM
     clf = svm.SVC(C=c, kernel='rbf', gamma=gamma)
     clf = clf.fit(X, Y)
+    predictions = clf.predict(X)
+    matrix = confusion_matrix(Y, predictions, labels=clf.classes_)
     # confusion matrix
     if show is True:
-        matrix = plot_confusion_matrix(clf, X, Y,
-                                         cmap=plt.cm.Blues,
-                                         normalize='true')
+        disp = ConfusionMatrixDisplay(confusion_matrix=matrix, display_labels=clf.classes_)
+        disp.plot()
         plt.title('Confusion matrix for our classifier')
-        plt.show(matrix)
         plt.show()
     # Predict the unknown data set
     Y_pred = clf.predict(two_d_coords)
     # Inject prediction and build new 3d coordinates array
     clf_extrapolation = numpy.column_stack((two_d_coords, Y_pred))
-    # NEW: Using classification of SVM as validation metric
-    if show is False:
-        matrix = plot_confusion_matrix(clf, X, Y,
-                                 cmap=plt.cm.Blues,
-                                 normalize='true')
-        plt.close()
-    if any(matrix.confusion_matrix[n,n] < thres_accuracy for n in range(len(matrix.confusion_matrix))):
+
+    if any(matrix[n,n] < thres_accuracy for n in range(len(matrix))):
         clf_extrapolation[:,-1] = 0 #Returns one class, which will be rejected in validation process
     # Voxel Extrapolation
     return clf_extrapolation

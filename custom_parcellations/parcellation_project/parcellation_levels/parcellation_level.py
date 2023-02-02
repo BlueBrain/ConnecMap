@@ -131,7 +131,7 @@ class ParcellationLevel(object):
     def find_next_level(self):
         if os.path.isdir(self.next_level_root):
             try:
-                next_level = ParcellationLevel.from_file_system(self.next_level_root, self._config)
+                next_level = self.__class__.from_file_system(self.next_level_root, self._config)
                 self.child = next_level
             except:
                 pass
@@ -220,9 +220,10 @@ class ParcellationLevel(object):
 
             module_mask = numpy.in1d(annotations.raw.flat, target_ids).reshape(annotations.raw.shape)
             ### Build mask, consider one or both hemispheres and discard non flat voxels
-            if config["hemisphere"] == "right":                         
+            ### TODO: This should be in aibs_level.py instead? Well, at least its optional...
+            if config.get("hemisphere") == "right":                         
                 module_mask[:,:,:int(module_mask.shape[2]/2)] = False
-            elif config["hemisphere"] == "left":
+            elif config.get("hemisphere") == "left":
                 module_mask[:,:,int(module_mask.shape[2]/2):] = False
             # Remove non flat pixels    
             anat_fm = voxcell.VoxelData.load_nrrd(config["inputs"]["anatomical_flatmap"])

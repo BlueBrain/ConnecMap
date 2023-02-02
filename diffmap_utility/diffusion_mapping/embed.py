@@ -70,7 +70,7 @@ def compute_diffusion_map(L, alpha=0.5, n_components=None, diffusion_time=0,
 
     if not skip_checks:
         if has_sklearn:
-            from sklearn.manifold.spectral_embedding_ import _graph_is_connected
+            from sklearn.manifold._spectral_embedding import _graph_is_connected
             if not _graph_is_connected(L):
                 raise ValueError('Graph is disconnected')
         else:

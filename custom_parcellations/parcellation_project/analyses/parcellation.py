@@ -14,10 +14,10 @@ from voxcell import VoxelData, RegionMap
 
 def from_parcellation(base_func):
     def returned_function(parc_level, **kwargs):
-        vol0_fn = parc_level._config["anatomical_parcellation"]
+        vol0_fn = parc_level._config["inputs"]["anatomical_parcellation"]
         vol0 = VoxelData.load_nrrd(vol0_fn)
         vol1 = copy.deepcopy(parc_level.region_volume)
-        r0_fn = parc_level._config['anatomical_hierarchy'] 
+        r0_fn = parc_level._config["inputs"]['anatomical_hierarchy'] 
         r0 = RegionMap.load_json(r0_fn)
         r1 = parc_level.id_map
         return base_func(vol0, vol1, r0, r1, **kwargs)
@@ -43,12 +43,14 @@ def _mi_implementation(distribution_initial, distribution_split):
 
 
 
-def mutual_information_regions(vol0, vol1, hierarchy0, modules, plot=True, right_hemisphere=True, **kwargs):
+def mutual_information_regions(vol0, vol1, hierarchy0, modules, plot=True, right_hemisphere=True,
+                               root="Isocortex", **kwargs):
     '''Computes the information gain of the regions' distribution of the 
     traditional parcellation scheme (CCF, v3) depending on the custom
     parcellation scheme.
     '''
-    distrib0, distrib1 = distribution_regions(vol0, vol1, hierarchy0, modules, right_hemisphere=right_hemisphere)
+    distrib0, distrib1 = distribution_regions(vol0, vol1, hierarchy0, modules,
+                                              right_hemisphere=right_hemisphere, root=root)
     info_gain, prior_entropy =  _mi_implementation(distrib0, distrib1)
     if plot is True:
         plot_info_gain(prior_entropy, info_gain, method='regions')
@@ -64,12 +66,14 @@ def mutual_information_regions(vol0, vol1, hierarchy0, modules, plot=True, right
             plt.show()
         return prior_entropy, info_gain
     
-def mutual_information_layers(vol0, vol1, hierarchy0, modules, plot=True, right_hemisphere=True, **kwargs):
+def mutual_information_layers(vol0, vol1, hierarchy0, modules, plot=True, right_hemisphere=True,
+                              root="Isocortex", **kwargs):
     '''Computes the information gain of the layers' distribution of the 
     traditional parcellation scheme (CCF, v3) depending on the custom
     parcellation scheme.
     '''
-    distrib0, distrib1 = distribution_layers(vol0, vol1, hierarchy0, modules, right_hemisphere=right_hemisphere)
+    distrib0, distrib1 = distribution_layers(vol0, vol1, hierarchy0, modules,
+                                             right_hemisphere=right_hemisphere, root=root)
     info_gain, prior_entropy =  _mi_implementation(distrib0, distrib1)
     if plot is True:
         plot_info_gain(prior_entropy, info_gain, method='layers')
@@ -145,7 +149,7 @@ def overlap_two_parcellations(vol0, vol1, hierarchy0, modules, plot=True, right_
         return df_ratio
     
 
-def distribution_regions(vol0, vol1, hierarchy0, modules, right_hemisphere=True):
+def distribution_regions(vol0, vol1, hierarchy0, modules, right_hemisphere=True, root="Isocortex"):
     ''' Returns one dictionary of the number of voxels of each regions of the 
     traditional parcellation scheme (CCF,v3) in the isocortex and its distribution.
     Returns another dictionary correponding of the
@@ -155,7 +159,7 @@ def distribution_regions(vol0, vol1, hierarchy0, modules, right_hemisphere=True)
     if right_hemisphere is True:
         vol0.raw = vol0.raw[:,:,int(vol0.raw.shape[2]/2) : int(vol0.raw.shape[2])].copy()
         vol1.raw = vol1.raw[:,:,int(vol1.raw.shape[2]/2) : int(vol1.raw.shape[2])].copy()
-    reg_names, _ = regions_and_layers(hierarchy0, vol0)
+    reg_names, _ = regions_and_layers(hierarchy0, vol0, root=root)
     valid_ids  = [list(hierarchy0.find(reg, 'acronym', with_descendants=True)) for reg in reg_names]
     valid_ids = [idx for sublist in valid_ids for idx in sublist]
     bitmask = numpy.in1d(vol0.raw.flatten(), valid_ids).reshape(vol0.raw.shape)
@@ -185,7 +189,7 @@ def distribution_regions(vol0, vol1, hierarchy0, modules, right_hemisphere=True)
     return distrib0, distrib1
 
 
-def distribution_layers(vol0, vol1, hierarchy0, modules, right_hemisphere=True):
+def distribution_layers(vol0, vol1, hierarchy0, modules, right_hemisphere=True, root="Isocortex"):
     ''' Returns one dictionary of the number of voxels of each layers of the 
     traditional parcellation scheme (CCF,v3) in the isocortex and its distribution.
     Returns another dictionary correponding of the
@@ -195,7 +199,7 @@ def distribution_layers(vol0, vol1, hierarchy0, modules, right_hemisphere=True):
     if right_hemisphere is True:
         vol0.raw = vol0.raw[:,:,int(vol0.raw.shape[2]/2) : int(vol0.raw.shape[2])].copy()
         vol1.raw = vol1.raw[:,:,int(vol1.raw.shape[2]/2) : int(vol1.raw.shape[2])].copy()
-    reg_names, layers = regions_and_layers(hierarchy0, vol0)
+    reg_names, layers = regions_and_layers(hierarchy0, vol0, root=root)
     valid_ids  = [list(hierarchy0.find(reg, "acronym", with_descendants=True)) for reg in reg_names]
     valid_ids = [idx for sublist in valid_ids for idx in sublist]
     bitmask = numpy.in1d(vol0.raw.flatten(), valid_ids).reshape(vol0.raw.shape)

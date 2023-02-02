@@ -66,6 +66,9 @@ class ParcellationProject(object):
         connectivity = self.config['parameters']['Diffusion_mapping']
         self.current_level.write_flattening_config(components_to_use, overwrite=overwrite, **connectivity)
         self.current_level.write_cache_config(overwrite=overwrite)
+        fm_out_root = os.path.split(self.current_level.flatmap_fn)[0]
+        if not os.path.isdir(fm_out_root):
+            os.makedirs(fm_out_root)
 
         print(
             """
@@ -85,9 +88,14 @@ class ParcellationProject(object):
         ParcellationLevel.analysis_root.
         """
         from parcellation_project.analyses import parcellation  # module for all analyses of parcellations
+        analysis_args = self.lvl_cfg.get("analysis_args", {})
         for analysis_name in self.lvl_cfg["analyses"]["parcellation"]:
-            function = parcellation.__dict__[analysis_name]
-            function(self.current_level, output_root=self.current_level.analysis_root)
+            try:
+                function = parcellation.__dict__[analysis_name]
+                function(self.current_level, output_root=self.current_level.analysis_root,
+                         **analysis_args.get(analysis_name, {}))
+            except:
+                print("Problem executing analysis: {0}".format(analysis_name))
 
 
     def analyze_current_flatmap(self):
@@ -117,7 +125,7 @@ class ParcellationProject(object):
             assert len(r.get("children", [])) == 0, "Region to be split should be clean"
             curr_ids = voxcell.RegionMap.from_dict(r).as_dataframe().index.values
             idxx = numpy.in1d(ann_vol.flat, curr_ids).reshape(ann_vol.shape)
-            idxx[:,:,:int(idxx.shape[2]/2)] = False
+            # idxx[:,:,:int(idxx.shape[2]/2)] = False
             assert numpy.count_nonzero(idxx) == len(solution), "This should never be triggered!"
             ann_vol[idxx] = solution[:, -1] + offset
             for sub_id in numpy.unique(solution[:, -1]):

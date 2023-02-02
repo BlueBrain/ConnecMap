@@ -16,6 +16,16 @@ def projection_from_json(fn):
         cache_file=cache_args["h5Cache"], grow_cache=False)
         cache._cache_only = True
         return cache
+    
+    elif cache_cls == "BinarySplitModel":
+        from . import BinarySplitModel
+        fn_annotations = cache_args.get("AnnotationFile", None)
+        fn_hierarchy = cache_args.get("HierarchyFile", None)
+        cache = BinarySplitModel(cache_args["ToyModelRoot"],
+                                 fn_annotations=fn_annotations, fn_hierarchy=fn_hierarchy,
+                                 cache_file=cache_args.get("H5Cache", None),
+                                 grow_cache=(cache_args.get("H5Cache", None) is not None))
+        return cache
 
     elif cache_cls == "AibsMcmProjections":
         try:
@@ -24,6 +34,7 @@ def projection_from_json(fn):
             from .aibs_mcm_projection import AibsMcmProjections
             cache = AibsMcmProjections(vmc, cache_args.get("H5Cache", None),
                                        grow_cache=(cache_args.get("H5Cache", None) is not None))
+            return cache
         except ImportError:
             raise ImportError("Must install mouse_connectivity_models to use the AibsMcmProjections class!")
 

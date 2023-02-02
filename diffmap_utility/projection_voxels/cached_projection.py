@@ -7,7 +7,7 @@ class RegionHierarchyWrapper(object):
         self._tree = voxcell.RegionMap.load_json(hierarchy_fn)
     
     def region_ids(self, lst_regions):
-        region_id_set = {}
+        region_id_set = set()
         for region in lst_regions:
             region_id_set.update(self._tree.find(region, "acronym", with_descendants=True))
         return list(region_id_set)
@@ -110,7 +110,13 @@ class CachedProjections(object):
 
         """
         self.source_3d_flat = self._three_d_to_three_d_flat(self.source_3d, self._shape3d)
+        assert numpy.all(numpy.diff(self.source_3d_flat) > 0), """
+        For technical reasons, the equivalent flat coordinates must be in sorted order
+        """  # Line 173
         self.target_3d_flat = self._three_d_to_three_d_flat(self.target_3d, self._shape3d)
+        assert numpy.all(numpy.diff(self.target_3d_flat) > 0), """
+        For technical reasons, the equivalent flat coordinates must be in sorted order
+        """
 
     @staticmethod
     def _three_d_to_three_d_flat(idx, reference_shape):
@@ -164,6 +170,7 @@ class CachedProjections(object):
         if index_as == 'source':
             if strict:
                 assert numpy.all(numpy.in1d(three_d_flat, self.source_3d_flat))
+            # The following type of lookup assumes sorted order of source_3d_flat (same for target below)
             return numpy.nonzero(numpy.in1d(self.source_3d_flat, three_d_flat))[0]
         elif index_as == 'target':
             if strict:

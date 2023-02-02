@@ -1,0 +1,80 @@
+{
+  "level_class": "BinarySplitLevel",
+  "level_configuration": {
+    "root_region": "BSPRoot",
+    "inputs":{
+        "anatomical_model": "./b_model.json",
+        "anatomical_flatmap": "./anatomical_flatmap.nrrd",
+        "anatomical_parcellation": "./b_annotations.nrrd",
+        "anatomical_hierarchy": "./b_hierarchy.json"
+    },
+    "paths": {
+      "region_volume": "run/custom_annotations.nrrd",
+      "hierarchy": "run/custom_hierarchy.json",
+      "lower_level": "split",
+      "flatten_cfg": "run/flattening_config.json",
+      "flatmap": "output/flatmap.nrrd",
+      "characterization": "output/characterization.json",
+      "analyses": "output/analyses",
+      "cache_cfg": "run/cache_config.json"
+    },
+    "analyses": {
+      "parcellation": ["mutual_information_from_parcellation_regions",
+                      "overlap_with_parcellation"],
+      "flatmap": ["banana_factor_from_parcellation",
+                  "gradient_map_from_parcellation",
+                  "gradient_deviation_from_parcellation",
+                  "reversal_index_from_parcellation",
+                  "sum_gradient_variance_from_parcellation",
+                  "mean_gradient_variance_from_parcellation",
+                  "sum_gradient_dispersion_from_parcellation",
+                  "mean_gradient_dispersion_from_parcellation"]
+    },
+    "analysis_args": {
+      "mutual_information_from_parcellation_regions": {"root": "BSPRoot", "right_hemisphere": 0}
+    }
+  },
+  "parameters": {
+    "_comment": "Any parameters can go here",
+    "splitting": {
+      "step_1": {
+        "function": "reversal_detector_from_parcellation",
+        "args": [],
+        "kwargs": {"thres_banana_factor": 0,
+         "thres_gradient_deviation": 50,
+          "thres_reversal_index": 0.1,
+          "alpha": 0.005,
+          "component": 0,
+          "eps": 0.01,
+          "min_cluster_size": 100,
+          "min_samples": 20,
+          "cut_distance": 0.0,
+          "pre_filter_sz": 2,
+          "post_filter_sz": 1,
+          "min_seed_cluster_sz": 12,
+          "border_thresh": 0.03}
+      },
+      "step_2": {
+        "function": "SVM_splitter",
+        "args": [],
+        "kwargs": {"C": 0.5, "gamma":  0.05, "t":  2, "thres_accuracy": 0, "merge": 1},
+        "tuning": "SVM_tuner",
+        "validation": {
+            "function": 0,
+            "kwargs": {"thres_size": 350, "thres_MSE": 1000, "thres_MAPE": 1000, "thres_Rsquared": 0} 
+      }
+     }
+    },
+    "visualization":{
+    "step_1": "reversal_detection_for_visualization",
+    "step_2": "viz_with_SVM"
+    },
+    "initial_parcellation": {
+      "Module1": ["BSPRoot"]
+    },
+    "Diffusion_mapping":{
+    "consider_connectivity": "inter",
+    "connectivity_direction": "efferent"
+    }
+  }
+}

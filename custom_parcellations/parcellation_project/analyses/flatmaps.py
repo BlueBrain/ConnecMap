@@ -37,12 +37,13 @@ def flatmap_to_coordinates(ann, fm, hierarchy_root):
     without using cache, you can theoritically visualize any regions from a given
     annotation file. Note that you can only access the coordinates and no projection
     data.
+    TODO: Hemisphere filtering
     '''
     lst_ids = hierarchy_root.as_dataframe().index.values
     coords = []
     for x in range(int(ann.raw.shape[0])):
         for y in range(int(ann.raw.shape[1])):
-            for z in range(int(ann.raw.shape[2]/2),int(ann.raw.shape[2])):
+            for z in range(int(ann.raw.shape[2])):
                 if ann.raw[x,y,z] in lst_ids:
                     coords.append([x,y,z])
     coords_3d = numpy.vstack(coords)
