@@ -43,7 +43,72 @@ def write_flatmap(flattened_regions, considered_regions, three_d_coords, flatmap
     VoxelData.save_nrrd(my_map, output_path)
 
 
-def normalize_fm_coordinates(fm_coords, normalize_args=-1, multiply=numpy.NaN):
+def relax_positions(coords, reference_coords, dist_cutoff=101., n_iter=100):
+    from sknetwork.embedding import Spring
+    from scipy import sparse
+    from scipy.spatial import distance
+
+    D = distance.squareform(distance.pdist(reference_coords))
+    G = sparse.coo_matrix((D > 0) & (D < dist_cutoff))
+    spr = Spring(n_components=3, n_iter=n_iter, tol=1E-6)
+    res = spr.fit_transform(G, position_init=coords)
+    return res
+
+
+def align_positions(coords, reference, normalize=False, resolution=100):
+    from scipy.spatial import transform
+    
+    c_nrml = (coords - coords.mean(axis=0, keepdims=True)) / coords.std(axis=0, keepdims=True)
+    r_nrml = (reference - reference.mean(axis=0, keepdims=True)) / reference.std(axis=0, keepdims=True)
+    
+    if normalize:
+        c_nrml = c_nrml / numpy.linalg.norm(c_nrml, axis=1, keepdims=True)
+        r_nrml = r_nrml / numpy.linalg.norm(r_nrml, axis=1, keepdims=True)
+    
+    rot_tf, _ = transform.Rotation.align_vectors(r_nrml, c_nrml)
+    rotated = rot_tf.apply(coords - coords.mean(axis=0, keepdims=True))
+    rotated = reference.std(axis=0, keepdims=True) * rotated / rotated.std(axis=0, keepdims=True)
+    final = resolution * numpy.round(rotated / resolution).astype(int) + reference.mean(axis=0, keepdims=True)
+    return final
+
+
+def equalize_positions(coords, reference):
+    coords = coords - coords.mean(axis=0, keepdims=True)
+    coords = reference.std(axis=0, keepdims=True) * coords / coords.std(axis=0, keepdims=True)
+    coords = coords + reference.mean(axis=0, keepdims=True)
+    return coords
+
+
+def discretize_positions(coords, resolution=100.):
+    return resolution * numpy.round(coords / resolution).astype(int)
+
+
+def homogenize_positions(coords):
+    out = numpy.zeros_like(coords, dtype=float)
+    perc = numpy.arange(0, 101)
+    for i, c in enumerate(coords.transpose()):
+        out[:, i] = numpy.interp(c, numpy.percentile(c, perc), perc)
+    spread = coords.max(axis=0, keepdims=True) - coords.min(axis=0, keepdims=True)
+    out = spread * out + coords.min(axis=0, keepdims=True)
+    return out
+
+def normalize_fm_coordinates(fm_coords, base_coords, normalization_args):
+    if isinstance(normalization_args, list):
+        for nrml in normalization_args:
+            if nrml["method"] == "relax":
+                fm_coords = relax_positions(fm_coords, base_coords, **nrml.get("kwargs", {}))
+            elif nrml["method"] == "align":
+                fm_coords = align_positions(fm_coords, base_coords, **nrml.get("kwargs", {}))
+            elif nrml["method"] == "equalize":
+                fm_coords = equalize_positions(fm_coords, base_coords)
+            elif nrml["method"] == "discretize":
+                fm_coords = discretize_positions(fm_coords, **nrml.get("kwargs", {}))
+            elif nrml["method"] == "homogenize":
+                fm_coords = homogenize_positions(fm_coords)
+    else:
+        return normalize_positions_manually(fm_coords, normalization_args)
+
+def normalize_positions_manually(fm_coords, normalize_args=-1, multiply=numpy.NaN):
     fm_coords = fm_coords - numpy.nanmin(fm_coords, axis=0, keepdims=True)
     if fm_coords.shape[1] == 2:
         normalize_spread = numpy.array(normalize_args['normalize_spread'])
@@ -111,7 +176,7 @@ if __name__ == "__main__":
                               "lambdas": list(embed_stats["lambdas"])}))
                 
         embed_coords_final = embed_coords_final[:, components_to_use]
-        embed_coords_final = normalize_fm_coordinates(embed_coords_final, _regions.get("normalization_args", {}))
+        embed_coords_final = normalize_fm_coordinates(embed_coords_final, coords_final, _regions.get("normalization_args", {}))
 
         write_flatmap(_regions["flatten"], tgt_options["considered_regions"],
                       coords_final, embed_coords_final, output_path,
