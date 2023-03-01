@@ -1,13 +1,12 @@
 import numpy
 from voxcell import VoxelData
 from parcellation_project.analyses import flatmaps as fm_analyses
-from parcellation_project.project import ParcellationLevel
 from sklearn.cluster import KMeans
 from sklearn import svm
 from scipy.cluster.hierarchy import linkage, fcluster
 import scipy
 from scipy.spatial.distance import pdist
-from sklearn.metrics import plot_confusion_matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import itertools
 from scipy.spatial.distance import pdist, cdist, squareform
@@ -17,7 +16,8 @@ from parcellation_project.split.tuning import tune_epsilon_HDBSCAN, tune_HDBSCAN
 from parcellation_project.split.tuning import HDBSCAN_clf_outliers, HDBSCAN_cut_distance
 from parcellation_project.split.reversal_detector import reversal_detector
 from parcellation_project.split.cosine_distance_clustering import extract_gradients, cosine_distance_clustering
- 
+
+from ..tree_helpers import region_map_at
 
 def binary_classification(deg_arr, two_d_coords):
     '''Classify the gradient in two classes along the 2d coordinates
@@ -33,14 +33,12 @@ def binary_classification(deg_arr, two_d_coords):
 
 
 def binary_classification_from_parcellation(parc_level, **kwargs):
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     annotations = parc_level.region_volume
     results = {}
     for region_name in parc_level.regions:
-        r = parc_level.hierarchy_root.find("acronym", region_name)
-        assert len(r) == 1
-        r = r[0]
+        r = region_map_at(parc_level.hierarchy_root, region_name)
         _, coords2d = fm_analyses.flatmap_to_coordinates(annotations, fm0, r)
         coords2d = numpy.unique(coords2d, axis=0)
         deg_arr = fm_analyses.degree_matrix_from_parcellation(parc_level, r, normalize=True)
@@ -75,15 +73,13 @@ def KMeans_classification(x1, y1, x2, y2, two_d_coords, k):
     return grad_clf
     
 def KMeans_classification_from_parcellation(parc_level, **kwargs):
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     fm1 = parc_level.flatmap  # Diffusion fm
     annotations = parc_level.region_volume
     results = {}
     for region_name in parc_level.regions:
-        r = parc_level.hierarchy_root.find("acronym", region_name)
-        assert len(r) == 1
-        r = r[0]
+        r = region_map_at(parc_level.hierarchy_root, region_name)
         _, coords2d = fm_analyses.flatmap_to_coordinates(annotations, fm0, r)
         coords2d = numpy.unique(coords2d, axis=0)
         gradient_dev = numpy.mean(fm_analyses.gradient_deviation_from_parcellation(parc_level, r, plot=False))
@@ -133,7 +129,7 @@ def HDBSCAN_classification(x1, y1, x2, y2, two_d_coords, **kwargs):
         return grad_clf
     
 def HDBSCAN_classification_from_parcellation(parc_level, **kwargs):
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     fm1 = parc_level.flatmap  # Diffusion fm
     annotations = parc_level.region_volume
@@ -172,15 +168,13 @@ def quadri_classification(x1, y1, x2, y2, two_d_coords):
     return [out_ssin, out_scos]
 
 def quadri_classification_from_parcellation(parc_level, **kwargs):
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     fm1 = parc_level.flatmap  # Diffusion fm
     annotations = parc_level.region_volume
     results = {}
     for region_name in parc_level.regions:
-        r = parc_level.hierarchy_root.find("acronym", region_name)
-        assert len(r) == 1
-        r = r[0]
+        r = region_map_at(parc_level.hierarchy_root, region_name)
         _, coords2d = fm_analyses.flatmap_to_coordinates(annotations, fm0, r)
         coords2d = numpy.unique(coords2d, axis=0)
         gradient_dev = numpy.mean(fm_analyses.gradient_deviation_from_parcellation(parc_level, r, plot=False))
@@ -194,15 +188,13 @@ def quadri_classification_from_parcellation(parc_level, **kwargs):
     return results
 
 def reversal_detector_from_parcellation(parc_level, **kwargs):
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     fm1 = parc_level.flatmap  # Diffusion fm
     annotations = parc_level.region_volume
     results = {}
     for region_name in parc_level.regions:
-        r = parc_level.hierarchy_root.find("acronym", region_name)
-        assert len(r) == 1
-        r = r[0]
+        r = region_map_at(parc_level.hierarchy_root, region_name)
         _, coords2d = fm_analyses.flatmap_to_coordinates(annotations, fm0, r)
         coords2d = numpy.unique(coords2d, axis=0)
         gradient_dev = numpy.mean(fm_analyses.gradient_deviation_from_parcellation(parc_level, r, plot=False))
@@ -214,6 +206,7 @@ def reversal_detector_from_parcellation(parc_level, **kwargs):
             results[region_name] = reversal_detector(region_name,
                                                     fm0, fm1,
                                                     annotations, r,
+                                                    component=kwargs.get("component", "optimized"),
                                                     pre_filter_sz=kwargs["pre_filter_sz"],
                                                     post_filter_sz=kwargs["post_filter_sz"],
                                                     min_seed_cluster_sz=kwargs["min_seed_cluster_sz"],
@@ -222,16 +215,14 @@ def reversal_detector_from_parcellation(parc_level, **kwargs):
     
 
 def cosine_distance_clustering_from_parcellation(parc_level, **kwargs):
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     fm1 = parc_level.flatmap  # Diffusion fm
     annotations = parc_level.region_volume
     char = parc_level.characterization
     results = {}
     for region_name in parc_level.regions:
-        r = parc_level.hierarchy_root.find("acronym", region_name)
-        assert len(r) == 1
-        r = r[0]
+        r = region_map_at(parc_level.hierarchy_root, region_name)
         _, coords2d = fm_analyses.flatmap_to_coordinates(annotations, fm0, r)
         coords2d = numpy.unique(coords2d, axis=0)
         gradient_dev = numpy.mean(fm_analyses.gradient_deviation_from_parcellation(parc_level, r, plot=False))
@@ -261,25 +252,20 @@ def split_with_SVM(gradient_clf, c, gamma, thres_accuracy, show=True):
     # Train SVM
     clf = svm.SVC(C=c, kernel='rbf', gamma=gamma)
     clf = clf.fit(X, Y)
+    predictions = clf.predict(X)
+    matrix = confusion_matrix(Y, predictions, labels=clf.classes_)
     # confusion matrix
     if show is True:
-        matrix = plot_confusion_matrix(clf, X, Y,
-                                         cmap=plt.cm.Blues,
-                                         normalize='true')
+        disp = ConfusionMatrixDisplay(confusion_matrix=matrix, display_labels=clf.classes_)
+        disp.plot()
         plt.title('Confusion matrix for our classifier')
-        plt.show(matrix)
         plt.show()
     # Predict the unknown data set
     Y_pred = clf.predict(two_d_coords)
     # Inject prediction and build new 3d coordinates array
     clf_extrapolation = numpy.column_stack((two_d_coords, Y_pred))
-    # NEW: Using classification of SVM as validation metric
-    if show is False:
-        matrix = plot_confusion_matrix(clf, X, Y,
-                                 cmap=plt.cm.Blues,
-                                 normalize='true')
-        plt.close()
-    if any(matrix.confusion_matrix[n,n] < thres_accuracy for n in range(len(matrix.confusion_matrix))):
+
+    if any(matrix[n,n] < thres_accuracy for n in range(len(matrix))):
         clf_extrapolation[:,-1] = 0 #Returns one class, which will be rejected in validation process
     # Voxel Extrapolation
     return clf_extrapolation
@@ -396,10 +382,10 @@ def unflattening(parc_level, region, solution, only_sort=False):
     Add a sorting coordinates process to keep consistency.
     Set only_sort=True if you want to skip the unflattening process.
     '''
-    fm0_fn = parc_level._config["anatomical_flatmap"]
+    fm0_fn = parc_level._config["inputs"]["anatomical_flatmap"]
     fm0 = VoxelData.load_nrrd(fm0_fn)  # Anatomical fm
     annotations = parc_level.region_volume
-    hier = parc_level.hierarchy_root.find("acronym", region)[0]
+    hier = region_map_at(parc_level.hierarchy_root, region)
     three_d_coords, two_d_coords = fm_analyses.flatmap_to_coordinates(annotations, fm0, hier)
     if only_sort == False:
         sort_coords = numpy.column_stack((two_d_coords, numpy.zeros((len(two_d_coords),1))))

@@ -21,3 +21,4 @@ algorithms useful for the splitting process.
 
 parcellation.py: Functions to have a global appreciation of the resulting scheme with respect to another.
 
+For more information, refer the the README at the root of the repository.

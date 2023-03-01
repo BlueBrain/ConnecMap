@@ -1,6 +1,7 @@
 import hdbscan
 import numpy
 from voxel_maps import coordinates_to_image
+from ..tree_helpers import region_map_to_dict
 from scipy.spatial.distance import pdist, squareform
 
 
@@ -8,7 +9,8 @@ def extract_gradients(fm0, fm1, annotations, hierarchy_root):
     """Compute connectivity gradients of one region and plot them onto its anatomical
     flatmap.
     """
-    region = hierarchy_root.data['acronym']
+
+    region = region_map_to_dict(hierarchy_root)['acronym']
     mask = numpy.all((~numpy.isnan(fm1.raw)) & (fm1.raw > -1), axis=3)
     ann_vals = annotations.raw[mask]
     xy = fm0.raw[mask]
@@ -18,7 +20,7 @@ def extract_gradients(fm0, fm1, annotations, hierarchy_root):
         l = numpy.sqrt(gX ** 2 + gY ** 2)
         return gX / l, gY / l
 
-    tgt_region_ids = list(hierarchy_root.collect('acronym', region, 'id'))
+    tgt_region_ids = list(hierarchy_root.find(region, "acronym", with_descendants=True))
     bitmask = numpy.in1d(ann_vals, tgt_region_ids)
     sub_xy = xy[bitmask]
     sub_ab = ab[bitmask]
