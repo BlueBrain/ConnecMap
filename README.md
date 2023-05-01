@@ -168,3 +168,8 @@ Some other useful functionality is still not fully implemented and we invite you
 1. The ability to specify other value for **consider_connectivity** in the config file (see above)
 2. Better handling of hemispheres. That one's a mess right now.
 3. A command line script that performs the steps related to __custom_parcellations__ that are currently run in an interactive session. This may include automatically submitting the diffusion embedding as a computing job to a job scheduler, such as SLURM.
+
+## Acknowledgement
+This study was supported by funding to the Blue Brain Project, a research center of the École polytechnique fédérale de Lausanne (EPFL), from the Swiss government’s ETH Board of the Swiss Federal Institutes of Technology.
+
+Copyright (c) Blue Brain Project/EPFL
